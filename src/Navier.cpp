@@ -146,18 +146,19 @@ void Navier::setup()
         sparsity_pressure_mass.compress();
 
         pcout << "  Initializing the matrices" << std::endl;
-        system_matrix.reinit(sparsity);
+        jacobian_matrix.reinit(sparsity);
         pressure_mass.reinit(sparsity_pressure_mass);
 
         pcout << "  Initializing the system right-hand side" << std::endl;
-        system_rhs.reinit(block_owned_dofs, MPI_COMM_WORLD);
+        residual_vector.reinit(block_owned_dofs, MPI_COMM_WORLD);
         pcout << "  Initializing the solution vector" << std::endl;
         solution_owned.reinit(block_owned_dofs, MPI_COMM_WORLD);
+        delta_owned.reinit(block_owned_dofs, MPI_COMM_WORLD);
         solution.reinit(block_owned_dofs, block_relevant_dofs, MPI_COMM_WORLD);
     }
 }
 
-void Navier::assemble()
+void Navier::assemble_system(const bool initial_step)
 {
     pcout << "===============================================" << std::endl;
     pcout << "Assembling the system" << std::endl;
@@ -181,12 +182,18 @@ void Navier::assemble()
 
     std::vector<types::global_dof_index> dof_indices(dofs_per_cell);
 
-    system_matrix = 0.0;
-    system_rhs = 0.0;
+    jacobian_matrix = 0.0;
+    residual_vector = 0.0;
     pressure_mass = 0.0;
 
     FEValuesExtractors::Vector velocity(0);
     FEValuesExtractors::Scalar pressure(dim);
+
+    // We use these vectors to store the old solution (i.e. at previous Newton
+    // iteration) and its gradient on quadrature nodes of the current cell.
+    std::vector<Tensor<1, dim>> velocity_values_loc(n_q);
+    std::vector<Tensor<2, dim>> velocity_gradient_loc(n_q);
+    std::vector<double> pressure_values_loc(n_q);
 
     for (const auto &cell : dof_handler.active_cell_iterators())
     {
@@ -198,6 +205,15 @@ void Navier::assemble()
         cell_matrix = 0.0;
         cell_rhs = 0.0;
         cell_pressure_mass_matrix = 0.0;
+
+        // We need to compute the Jacobian matrix and the residual for current
+        // cell. This requires knowing the value and the gradient of u^{(k)}
+        // (stored inside solution) on the quadrature nodes of the current
+        // cell. This can be accomplished through
+        // FEValues::get_function_values and FEValues::get_function_gradients.
+        fe_values[velocity].get_function_values(solution, velocity_values_loc);
+        fe_values[velocity].get_function_gradients(solution, velocity_gradient_loc);
+        fe_values[pressure].get_function_values(solution, pressure_values_loc);
 
         for (unsigned int q = 0; q < n_q; ++q)
         {
@@ -219,6 +235,22 @@ void Navier::assemble()
                                        fe_values[velocity].gradient(j, q)) *
                         fe_values.JxW(q);
 
+                    // First Non-liner term contribution in the momentum equation.
+                    cell_matrix(i, j) +=
+                        scalar_product(
+                            fe_values[velocity].value(i, q),
+                            velocity_gradient_loc[q] *
+                                fe_values[velocity].value(j, q)) *
+                        fe_values.JxW(q);
+
+                    // Second Non-liner term contribution in the momentum equation.
+                    cell_matrix(i, j) +=
+                        scalar_product(
+                            fe_values[velocity].value(j, q),
+                            fe_values[velocity].gradient(i, q) *
+                                velocity_values_loc[q]) *
+                        fe_values.JxW(q);
+
                     // Pressure term in the momentum equation.
                     cell_matrix(i, j) -= fe_values[velocity].divergence(i, q) *
                                          fe_values[pressure].value(j, q) *
@@ -229,13 +261,53 @@ void Navier::assemble()
                                          fe_values[pressure].value(i, q) *
                                          fe_values.JxW(q);
 
+                    // Grad-div stabilization term.
+                    cell_matrix(i, j) +=
+                        gamma *
+                        scalar_product(fe_values[velocity].gradient(i, q),
+                                       fe_values[velocity].gradient(j, q)) *
+                        fe_values.JxW(q);
+
                     // Pressure mass matrix.
                     cell_pressure_mass_matrix(i, j) +=
                         fe_values[pressure].value(i, q) *
-                        fe_values[pressure].value(j, q) / nu * fe_values.JxW(q);
+                        fe_values[pressure].value(j, q) * fe_values.JxW(q);
                 }
 
-                // Forcing term.
+                // Local contributions to the residual vector:
+
+                // Viscosity term contribution.
+                cell_rhs(i) -= nu *
+                               scalar_product(fe_values[velocity].gradient(i, q),
+                                              velocity_gradient_loc[q]) *
+                               fe_values.JxW(q);
+                // Non-linear term contribution.
+                cell_rhs(i) -= scalar_product(
+                                   fe_values[velocity].value(i, q),
+                                   velocity_gradient_loc[q] *
+                                       velocity_values_loc[q]) *
+                               fe_values.JxW(q);
+
+                // Pressure term contribution in momentum equation.
+                cell_rhs(i) += fe_values[velocity].divergence(i, q) *
+                               pressure_values_loc[q] * fe_values.JxW(q);
+
+                // Pressure term contribution in continuity equation.
+                // For this one compute the velocity divergence on the fly
+                // using the gradient of the velocity.
+                double velocity_divergence_loc = trace(velocity_gradient_loc[q]);
+
+                cell_rhs(i) += velocity_divergence_loc *
+                               fe_values[pressure].value(i, q) *
+                               fe_values.JxW(q);
+
+                // Grad-div stabilization term contribution.
+                cell_rhs(i) -= gamma *
+                               velocity_divergence_loc *
+                               fe_values[velocity].divergence(i, q) *
+                               fe_values.JxW(q);
+
+                // Forcing term contribution.
                 cell_rhs(i) += scalar_product(forcing_term_tensor,
                                               fe_values[velocity].value(i, q)) *
                                fe_values.JxW(q);
@@ -257,7 +329,7 @@ void Navier::assemble()
                         for (unsigned int i = 0; i < dofs_per_cell; ++i)
                         {
                             cell_rhs(i) +=
-                                -p_out *
+                                p_out *
                                 scalar_product(fe_face_values.normal_vector(q),
                                                fe_face_values[velocity].value(i,
                                                                               q)) *
@@ -270,13 +342,13 @@ void Navier::assemble()
 
         cell->get_dof_indices(dof_indices);
 
-        system_matrix.add(dof_indices, cell_matrix);
-        system_rhs.add(dof_indices, cell_rhs);
+        jacobian_matrix.add(dof_indices, cell_matrix);
+        residual_vector.add(dof_indices, cell_rhs);
         pressure_mass.add(dof_indices, cell_pressure_mass_matrix);
     }
 
-    system_matrix.compress(VectorOperation::add);
-    system_rhs.compress(VectorOperation::add);
+    jacobian_matrix.compress(VectorOperation::add);
+    residual_vector.compress(VectorOperation::add);
     pressure_mass.compress(VectorOperation::add);
 
     // Dirichlet boundary conditions.
@@ -284,10 +356,17 @@ void Navier::assemble()
         std::map<types::global_dof_index, double> boundary_values;
         std::map<types::boundary_id, const Function<dim> *> boundary_functions;
 
+        Functions::ZeroFunction<dim> zero_function(dim + 1);
+
         // We interpolate first the inlet velocity condition alone, then the wall
         // condition alone, so that the latter "win" over the former where the two
         // boundaries touch.
-        boundary_functions[0] = &inlet_velocity;
+        // That is, only if the iteration of the Newton method is the first one.
+        // Otherwise the Dirichet BCs for the inlet surface in the other steps are all
+        // zero (no increase in the inlet velocity).
+        boundary_functions[0] = &zero_function;
+        if (initial_step)
+            boundary_functions[0] = &inlet_velocity;
         VectorTools::interpolate_boundary_values(dof_handler,
                                                  boundary_functions,
                                                  boundary_values,
@@ -296,7 +375,6 @@ void Navier::assemble()
 
         boundary_functions.clear();
         // std::vector<double> values = {0.0, 1.0, 0.0, 0.0};
-        Functions::ZeroFunction<dim> zero_function(dim + 1);
         boundary_functions[2] = &zero_function;
         boundary_functions[3] = &zero_function;
         VectorTools::interpolate_boundary_values(dof_handler,
@@ -306,33 +384,67 @@ void Navier::assemble()
                                                      {true, true, true, false}));
 
         MatrixTools::apply_boundary_values(
-            boundary_values, system_matrix, solution, system_rhs, false);
+            boundary_values, jacobian_matrix, delta_owned, residual_vector, false);
     }
 }
 
-void Navier::solve()
+void Navier::solve_newton_step()
 {
-    pcout << "===============================================" << std::endl;
-
-    SolverControl solver_control(2000, 1e-6 * system_rhs.l2_norm());
+    SolverControl solver_control(2000, 1e-6 * residual_vector.l2_norm());
 
     SolverGMRES<TrilinosWrappers::MPI::BlockVector> solver(solver_control);
 
-    // PreconditionBlockDiagonal preconditioner;
-    // preconditioner.initialize(system_matrix.block(0, 0),
-    //                           pressure_mass.block(1, 1));
-
     PreconditionBlockTriangular preconditioner;
-    preconditioner.initialize(system_matrix.block(0, 0),
+    preconditioner.initialize(gamma,
+                              nu,
+                              jacobian_matrix.block(0, 0),
                               pressure_mass.block(1, 1),
-                              system_matrix.block(1, 0));
+                              jacobian_matrix.block(0, 1));
 
-    pcout << "Solving the linear system" << std::endl;
-    solver.solve(system_matrix, solution_owned, system_rhs, preconditioner);
+    solver.solve(jacobian_matrix, delta_owned, residual_vector, preconditioner);
     pcout << "  " << solver_control.last_step() << " GMRES iterations"
           << std::endl;
+}
 
-    solution = solution_owned;
+void Navier::solve_newton()
+{
+    pcout << "===============================================" << std::endl;
+
+    const unsigned int n_max_iters = 1000;
+    const double residual_tolerance = 1e-6;
+
+    unsigned int n_iter = 0;
+    double residual_norm = residual_tolerance + 1;
+    bool initial_step = true;
+
+    while (n_iter < n_max_iters && residual_norm > residual_tolerance)
+    {
+        assemble_system(initial_step);
+        initial_step = false;
+        residual_norm = residual_vector.l2_norm();
+
+        pcout << "Newton iteration " << n_iter << "/" << n_max_iters
+              << " - ||r|| = " << std::scientific << std::setprecision(6)
+              << residual_norm << std::flush;
+
+        // We actually solve the system only if the residual is larger than the
+        // tolerance.
+        if (residual_norm > residual_tolerance)
+        {
+            solve_newton_step();
+
+            solution_owned += delta_owned;
+            solution = solution_owned;
+        }
+        else
+        {
+            pcout << " < tolerance" << std::endl;
+        }
+
+        ++n_iter;
+    }
+
+    pcout << "===============================================" << std::endl;
 }
 
 void Navier::output()

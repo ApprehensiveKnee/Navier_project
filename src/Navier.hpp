@@ -87,7 +87,7 @@ public:
         vector_value(const Point<dim> &p, Vector<double> &values) const override
         {
             // values[0] = -alpha * p[1] * (2.0 - p[1]) * (1.0 - p[2]) * (2.0 - p[2]);
-            values[0] = alpha * 3.0;
+            values[0] = alpha;
             for (unsigned int i = 1; i < dim + 1; ++i)
                 values[i] = 0.0;
         }
@@ -97,13 +97,13 @@ public:
         {
             if (component == 0)
                 // return -alpha * p[1] * (2.0 - p[1]) * (1.0 - p[2]) * (2.0 - p[2]);
-                return alpha * 3.0;
+                return alpha;
             else
                 return 0.0;
         }
 
     protected:
-        const double alpha = 1.0;
+        const double alpha = -10.0;
     };
 
     // Since we're working with block matrices, we need to make our own
@@ -126,77 +126,30 @@ public:
     protected:
     };
 
-    // Block-diagonal preconditioner.
-    class PreconditionBlockDiagonal
-    {
-    public:
-        // Initialize the preconditioner, given the velocity stiffness matrix, the
-        // pressure mass matrix.
-        void
-        initialize(const TrilinosWrappers::SparseMatrix &velocity_stiffness_,
-                   const TrilinosWrappers::SparseMatrix &pressure_mass_)
-        {
-            velocity_stiffness = &velocity_stiffness_;
-            pressure_mass = &pressure_mass_;
-
-            preconditioner_velocity.initialize(velocity_stiffness_);
-            preconditioner_pressure.initialize(pressure_mass_);
-        }
-
-        // Application of the preconditioner.
-        void
-        vmult(TrilinosWrappers::MPI::BlockVector &dst,
-              const TrilinosWrappers::MPI::BlockVector &src) const
-        {
-            SolverControl solver_control_velocity(1000,
-                                                  1e-2 * src.block(0).l2_norm());
-            SolverCG<TrilinosWrappers::MPI::Vector> solver_cg_velocity(
-                solver_control_velocity);
-            solver_cg_velocity.solve(*velocity_stiffness,
-                                     dst.block(0),
-                                     src.block(0),
-                                     preconditioner_velocity);
-
-            SolverControl solver_control_pressure(1000,
-                                                  1e-2 * src.block(1).l2_norm());
-            SolverCG<TrilinosWrappers::MPI::Vector> solver_cg_pressure(
-                solver_control_pressure);
-            solver_cg_pressure.solve(*pressure_mass,
-                                     dst.block(1),
-                                     src.block(1),
-                                     preconditioner_pressure);
-        }
-
-    protected:
-        // Velocity stiffness matrix.
-        const TrilinosWrappers::SparseMatrix *velocity_stiffness;
-
-        // Preconditioner used for the velocity block.
-        TrilinosWrappers::PreconditionILU preconditioner_velocity;
-
-        // Pressure mass matrix.
-        const TrilinosWrappers::SparseMatrix *pressure_mass;
-
-        // Preconditioner used for the pressure block.
-        TrilinosWrappers::PreconditionILU preconditioner_pressure;
-    };
-
-    // Block-triangular preconditioner.
+    // Block-triangular preconditioner. (Block Shur Preconditioner, as described in https://www.dealii.org/current/doxygen/deal.II/step_57.html)
     class PreconditionBlockTriangular
     {
     public:
-        // Initialize the preconditioner, given the velocity stiffness matrix, the
-        // pressure mass matrix.
+        // Initialize the preconditioner, given:
+        // - the velocity stiffness matrix
+        // - the pressure mass matrix
+        // - the B matrix
+        // - the viscosity
+        // - the gamma parameter
         void
-        initialize(const TrilinosWrappers::SparseMatrix &velocity_stiffness_,
+        initialize(const double &gamma_,
+                   const double &viscosity_,
+                   const TrilinosWrappers::SparseMatrix &velocity_stiffness_modified_,
                    const TrilinosWrappers::SparseMatrix &pressure_mass_,
-                   const TrilinosWrappers::SparseMatrix &B_)
+                   const TrilinosWrappers::SparseMatrix &B_T_)
         {
-            velocity_stiffness = &velocity_stiffness_;
+            gamma = &gamma_;
+            viscosity = &viscosity_;
+            velocity_stiffness = &velocity_stiffness_modified_;
             pressure_mass = &pressure_mass_;
-            B = &B_;
+            B_T = &B_T_;
 
-            preconditioner_velocity.initialize(velocity_stiffness_);
+            preconditioner_velocity.initialize(velocity_stiffness_modified_);
             preconditioner_pressure.initialize(pressure_mass_);
         }
 
@@ -205,30 +158,48 @@ public:
         vmult(TrilinosWrappers::MPI::BlockVector &dst,
               const TrilinosWrappers::MPI::BlockVector &src) const
         {
-            SolverControl solver_control_velocity(1000,
-                                                  1e-2 * src.block(0).l2_norm());
-            SolverCG<TrilinosWrappers::MPI::Vector> solver_cg_velocity(
-                solver_control_velocity);
-            solver_cg_velocity.solve(*velocity_stiffness,
-                                     dst.block(0),
-                                     src.block(0),
-                                     preconditioner_velocity);
 
-            tmp.reinit(src.block(1));
-            B->vmult(tmp, dst.block(0));
-            tmp.sadd(-1.0, src.block(1));
+            // Effect lower part of the preconditioner (Shur complement)
+            // Computing dst_1 = -(gamma + viscosity)*Mp^-1 * src_1
+            {
+                SolverControl solver_control_pressure(1000,
+                                                      1e-2 * src.block(1).l2_norm());
+                SolverCG<TrilinosWrappers::MPI::Vector> solver_cg_pressure(
+                    solver_control_pressure);
+                solver_cg_pressure.solve(*pressure_mass,
+                                         dst.block(1),
+                                         src.block(1),
+                                         preconditioner_pressure);
+                dst.block(1) *= -(*gamma + *viscosity);
+            }
 
-            SolverControl solver_control_pressure(1000,
-                                                  1e-2 * src.block(1).l2_norm());
-            SolverCG<TrilinosWrappers::MPI::Vector> solver_cg_pressure(
-                solver_control_pressure);
-            solver_cg_pressure.solve(*pressure_mass,
-                                     dst.block(1),
-                                     tmp,
-                                     preconditioner_pressure);
+            // Effect of the upper part of the block-triangular preconditioner
+            // Computing dest_1 = A^-1 * (src_0 - B^T * dst_1)
+
+            {
+                tmp.reinit(src.block(0));
+                B_T->vmult(tmp, dst.block(1));
+                tmp.sadd(-1.0, src.block(0));
+
+                // Change the iterative solver for the velocity sub-block (A is not simmetric anymore)
+                SolverControl solver_control_velocity(1000,
+                                                      1e-2 * src.block(0).l2_norm());
+                SolverGMRES<TrilinosWrappers::MPI::Vector> solver_gmres_velocity(
+                    solver_control_velocity);
+                solver_gmres_velocity.solve(*velocity_stiffness,
+                                            dst.block(0),
+                                            tmp,
+                                            preconditioner_velocity);
+            }
         }
 
     protected:
+        // Gamma parameter.
+        const double *gamma;
+
+        // Viscosity.
+        const double *viscosity;
+
         // Velocity stiffness matrix.
         const TrilinosWrappers::SparseMatrix *velocity_stiffness;
 
@@ -242,7 +213,7 @@ public:
         TrilinosWrappers::PreconditionILU preconditioner_pressure;
 
         // B matrix.
-        const TrilinosWrappers::SparseMatrix *B;
+        const TrilinosWrappers::SparseMatrix *B_T;
 
         // Temporary vector.
         mutable TrilinosWrappers::MPI::Vector tmp;
@@ -260,14 +231,18 @@ public:
     void
     setup();
 
-    // Assemble system. We also assemble the pressure mass matrix (needed for the
+    // Assemble system for each iteration of the Newton method. We also assemble the pressure mass matrix (needed for the
     // preconditioner).
     void
-    assemble();
+    assemble_system(const bool initial_step);
 
-    // Solve system.
+    // Solve Newton step.
     void
-    solve();
+    solve_newton_step();
+
+    // Solve Newton method.
+    void
+    solve_newton();
 
     // Output results.
     void
@@ -289,6 +264,9 @@ protected:
 
     // Kinematic viscosity [m2/s].
     const double nu = 1;
+
+    // Gamma parameter
+    const double gamma = 1.0;
 
     // Outlet pressure [Pa].
     const double p_out = 10;
@@ -338,14 +316,17 @@ protected:
     std::vector<IndexSet> block_relevant_dofs;
 
     // System matrix.
-    TrilinosWrappers::BlockSparseMatrix system_matrix;
+    TrilinosWrappers::BlockSparseMatrix jacobian_matrix;
 
     // Pressure mass matrix, needed for preconditioning. We use a block matrix for
     // convenience, but in practice we only look at the pressure-pressure block.
     TrilinosWrappers::BlockSparseMatrix pressure_mass;
 
     // Right-hand side vector in the linear system.
-    TrilinosWrappers::MPI::BlockVector system_rhs;
+    TrilinosWrappers::MPI::BlockVector residual_vector;
+
+    // Solutin increment (without ghost elements).
+    TrilinosWrappers::MPI::BlockVector delta_owned;
 
     // System solution (without ghost elements).
     TrilinosWrappers::MPI::BlockVector solution_owned;
