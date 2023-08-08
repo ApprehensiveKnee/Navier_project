@@ -320,7 +320,7 @@ void Navier::assemble_system(const bool initial_step)
             for (unsigned int f = 0; f < cell->n_faces(); ++f)
             {
                 if (cell->face(f)->at_boundary() &&
-                    cell->face(f)->boundary_id() == 1)
+                    cell->face(f)->boundary_id() == 3)
                 {
                     fe_face_values.reinit(cell, f);
 
@@ -375,8 +375,8 @@ void Navier::assemble_system(const bool initial_step)
 
         boundary_functions.clear();
         // std::vector<double> values = {0.0, 1.0, 0.0, 0.0};
+        boundary_functions[1] = &zero_function;
         boundary_functions[2] = &zero_function;
-        boundary_functions[3] = &zero_function;
         VectorTools::interpolate_boundary_values(dof_handler,
                                                  boundary_functions,
                                                  boundary_values,
