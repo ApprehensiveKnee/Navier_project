@@ -30,12 +30,12 @@ MeshSize{ PointsOf{ Volume{2}; } } = lcar3;
 BooleanDifference(3) = { Volume{1};Delete; }{ Volume{2}; Delete; };
 
 // Define physical surfaces for the box boundaries
-Physical Volume(1) = {3};
-Physical Surface(1) = {1};   // The surface on the positive x side of the box  --> Inlet
-Physical Surface(2) = {2,3,4,5}; // The surface representing the hole --> Walls
+Physical Volume(100) = {3};
+Physical Surface(0) = {1};   // The surface on the positive x side of the box  --> Inlet
+Physical Surface(1) = {2,3,4,5}; // The surface representing the hole --> Walls
 // Define physical surface for the hole
-Physical Surface(3) = {7,8,9}; // The surface representing the hole  ---> Cylinder
-Physical Surface(4) = {6};    // The surface on the negative x side of the box --> Outlet
+Physical Surface(2) = {7,8,9}; // The surface representing the hole  ---> Cylinder
+Physical Surface(3) = {6};    // The surface on the negative x side of the box --> Outlet
 // Physical Surface("Right") = {2};   // The surface on the positive y side of the box
 // Physical Surface("Left") = {4};    // The surface on the negative y side of the box
 // Physical Surface("Bottom") = {5};  // The surface on the bottom of the box
