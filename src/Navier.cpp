@@ -237,18 +237,16 @@ void Navier::assemble_system(const bool initial_step)
 
                     // First Non-liner term contribution in the momentum equation.
                     cell_matrix(i, j) +=
-                        scalar_product(
-                            fe_values[velocity].value(i, q),
-                            velocity_gradient_loc[q] *
-                                fe_values[velocity].value(j, q)) *
+                        fe_values[velocity].value(i, q) *
+                        (velocity_gradient_loc[q] *
+                         fe_values[velocity].value(j, q)) *
                         fe_values.JxW(q);
 
                     // Second Non-liner term contribution in the momentum equation.
                     cell_matrix(i, j) +=
-                        scalar_product(
-                            fe_values[velocity].value(j, q),
-                            fe_values[velocity].gradient(i, q) *
-                                velocity_values_loc[q]) *
+                        fe_values[velocity].value(i, q) *
+                        (fe_values[velocity].gradient(j, q) *
+                         velocity_values_loc[q]) *
                         fe_values.JxW(q);
 
                     // Pressure term in the momentum equation.
@@ -264,8 +262,8 @@ void Navier::assemble_system(const bool initial_step)
                     // Grad-div stabilization term.
                     cell_matrix(i, j) +=
                         gamma *
-                        scalar_product(fe_values[velocity].gradient(i, q),
-                                       fe_values[velocity].gradient(j, q)) *
+                        fe_values[velocity].divergence(i, q) *
+                        fe_values[velocity].divergence(j, q) *
                         fe_values.JxW(q);
 
                     // Pressure mass matrix.
@@ -282,10 +280,9 @@ void Navier::assemble_system(const bool initial_step)
                                               velocity_gradient_loc[q]) *
                                fe_values.JxW(q);
                 // Non-linear term contribution.
-                cell_rhs(i) -= scalar_product(
-                                   fe_values[velocity].value(i, q),
-                                   velocity_gradient_loc[q] *
-                                       velocity_values_loc[q]) *
+                cell_rhs(i) -= fe_values[velocity].value(i, q) *
+                               (velocity_gradient_loc[q] *
+                                velocity_values_loc[q]) *
                                fe_values.JxW(q);
 
                 // Pressure term contribution in momentum equation.
@@ -328,7 +325,7 @@ void Navier::assemble_system(const bool initial_step)
                     {
                         for (unsigned int i = 0; i < dofs_per_cell; ++i)
                         {
-                            cell_rhs(i) +=
+                            cell_rhs(i) -=
                                 p_out *
                                 scalar_product(fe_face_values.normal_vector(q),
                                                fe_face_values[velocity].value(i,

@@ -103,7 +103,7 @@ public:
         }
 
     protected:
-        const double alpha = -10.0;
+        const double alpha = 10.0;
     };
 
     // Since we're working with block matrices, we need to make our own
