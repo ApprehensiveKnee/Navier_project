@@ -2,9 +2,9 @@
 
 SetFactory("OpenCASCADE");
 
-lcar1 = 0.5;
+lcar1 = 0.25;
 lcar2 = .05;
-lcar3 = .05;
+lcar3 = .025;
 
 // Genarte a box with dimensions
 // x = 3.5

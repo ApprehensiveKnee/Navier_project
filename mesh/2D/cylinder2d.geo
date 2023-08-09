@@ -43,11 +43,11 @@ Plane Surface(100) = {10, 20};
 
 // Define the physical surfaces (optional but useful for boundary conditions)
 Physical Surface(100) = {100}; // Inlet = 1
-Physical Curve(1) = {4}; // Inlet = 1
-Physical Curve(2) = {2}; // Outlet = 2
-Physical Curve(3) = {1}; // Bottom = 3
-Physical Curve(4) = {3}; // Top = 4
-Physical Curve(5) = {5,6,7,8}; // Cylinder = 5
+Physical Curve(0) = {4}; // Inlet = 1
+Physical Curve(1) = {2}; // Outlet = 2
+Physical Curve(2) = {1}; // Bottom = 3
+Physical Curve(3) = {3}; // Top = 4
+Physical Curve(4) = {5,6,7,8}; // Cylinder = 5
 Coherence;
 
 

@@ -320,7 +320,7 @@ void Navier::assemble_system(const bool initial_step)
             for (unsigned int f = 0; f < cell->n_faces(); ++f)
             {
                 if (cell->face(f)->at_boundary() &&
-                    cell->face(f)->boundary_id() == 3)
+                    cell->face(f)->boundary_id() == 1)
                 {
                     fe_face_values.reinit(cell, f);
 
@@ -375,8 +375,8 @@ void Navier::assemble_system(const bool initial_step)
 
         boundary_functions.clear();
         // std::vector<double> values = {0.0, 1.0, 0.0, 0.0};
-        boundary_functions[1] = &zero_function;
         boundary_functions[2] = &zero_function;
+        boundary_functions[3] = &zero_function;
         VectorTools::interpolate_boundary_values(dof_handler,
                                                  boundary_functions,
                                                  boundary_values,
@@ -480,6 +480,7 @@ void Navier::output()
     DataOutBase::DataOutFilter data_filter(
         DataOutBase::DataOutFilterFlags(/*filter_duplicate_vertices = */ false,
                                         /*xdmf_hdf5_output = */ true));
+
     data_out.write_filtered_data(data_filter);
     data_out.write_hdf5_parallel(data_filter,
                                  output_file_name + ".h5",
