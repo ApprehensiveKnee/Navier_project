@@ -94,9 +94,14 @@ Physical Surface(2) = {1,2,4,6};
 Physical Surface(3) = {7,8,9,10,11,12};
 Physical Volume(100) = {1};
 
+
+General.NumThreads = 0;
+Geometry.OCCParallel = 1;
+Geometry.OCCSewFaces = 1;
+
+Mesh.Algorithm3D = 10;
 // Generate the mesh
 Mesh 3;
 
 // Save the mesh
 Save "cylinder3d-2.msh";
-Save "cylinder3d-2.vtk";

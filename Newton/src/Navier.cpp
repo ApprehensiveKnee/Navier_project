@@ -12,7 +12,7 @@ void Navier::setup()
         grid_in.attach_triangulation(mesh_serial);
 
         const std::string mesh_file_name =
-            "../mesh/3D/cylinder3d.msh";
+            "../../mesh/3D/cylinder3d.msh";
 
         std::ifstream grid_in_file(mesh_file_name);
         grid_in.read_msh(grid_in_file);
@@ -403,21 +403,19 @@ void Navier::solve_newton_step()
           << std::endl;
 }
 
-void Navier::solve_newton()
+void Navier::solve_newton(const bool &is_initial_step, const double &residual_tolerance, const unsigned int &n_max_iters)
 {
     pcout << "===============================================" << std::endl;
 
-    const unsigned int n_max_iters = 1000;
-    const double residual_tolerance = 1e-6;
-
     unsigned int n_iter = 0;
     double residual_norm = residual_tolerance + 1;
-    bool initial_step = true;
+    bool initial_step = is_initial_step;
 
     while (n_iter < n_max_iters && residual_norm > residual_tolerance)
     {
         assemble_system(initial_step);
-        initial_step = false;
+        if (initial_step)
+            initial_step = false;
         residual_norm = residual_vector.l2_norm();
 
         pcout << "Newton iteration " << n_iter << "/" << n_max_iters
@@ -442,6 +440,46 @@ void Navier::solve_newton()
     }
 
     pcout << "===============================================" << std::endl;
+}
+
+double Navier::compute_reynolds_number()
+{
+    const double approxim_Re = (rho * U * L) / nu;
+    pcout << "Approximate Reynolds number: " << approxim_Re << std::endl;
+    return approxim_Re;
+}
+
+void Navier::compute_initial_guess(const double &step_size)
+{
+    const double target_Re = this->compute_reynolds_number();
+    bool is_initial_step = true;
+
+    for (double Re = 100.0; Re < target_Re; Re = std::min(Re + step_size, target_Re))
+    {
+
+        nu = (rho * U * L) / Re;
+        pcout << "Computing initial guess for Re = " << Re << ", nu = " << nu << std::endl;
+
+        solve_newton(is_initial_step, 1e-6, 50);
+        is_initial_step = false;
+    }
+}
+
+void Navier::run()
+{
+    if (this->compute_reynolds_number() > 5e2)
+    {
+        pcout << "Searching for intial guess..." << std::endl;
+        const double step = 200.0;
+        this->compute_initial_guess(step);
+        pcout << "Initial guess found." << std::endl;
+        pcout << "Computing solution with Re = " << this->compute_reynolds_number() << std::endl;
+        this->solve_newton(false, 1e-8, 1000);
+    }
+    else
+    {
+        this->solve_newton(true, 1e-8, 1000);
+    }
 }
 
 void Navier::output()

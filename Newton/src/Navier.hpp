@@ -231,6 +231,15 @@ public:
     void
     setup();
 
+    // Run simulation.
+    void
+    run();
+
+    // Output results.
+    void
+    output();
+
+protected:
     // Assemble system for each iteration of the Newton method. We also assemble the pressure mass matrix (needed for the
     // preconditioner).
     void
@@ -242,13 +251,16 @@ public:
 
     // Solve Newton method.
     void
-    solve_newton();
+    solve_newton(const bool &is_initial_step, const double &residual_tolerance = 1e-6, const unsigned int &n_max_iters = 1000);
 
-    // Output results.
+    // Get an approximation of the Reynolds number
+    double
+    compute_reynolds_number();
+
+    // Method implementing continuation in the Reynolds number.
     void
-    output();
+    compute_initial_guess(const double &step_size);
 
-protected:
     // MPI parallel. /////////////////////////////////////////////////////////////
 
     // Number of MPI processes.
@@ -263,13 +275,26 @@ protected:
     // Problem definition. ///////////////////////////////////////////////////////
 
     // Kinematic viscosity [m2/s].
-    const double nu = 1;
+    double nu = 0.001;
 
     // Gamma parameter
     const double gamma = 1.0;
 
     // Outlet pressure [Pa].
     const double p_out = 10;
+
+    // NEW PARAMETERS FOR REYNOLDS NUMBER APPROXIMATION //////////////////////////
+
+    // Characteristic length [m].
+    const double L = 1.0; // In this case, the leght of the cylinder
+
+    // Characteristic velocity [m/s].
+    const double U = 10.0; // In this case, the inlet velocity
+
+    // Density [kg/m3].
+    const double rho = 1.225; // In this case, the density of the liquid flowing around the cylinder
+
+    //////////////////////////// NEW PARAMETERS FOR REYNOLDS NUMBER APPROXIMATION
 
     // Forcing term.
     ForcingTerm forcing_term;

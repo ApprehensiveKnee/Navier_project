@@ -3,21 +3,20 @@ SetFactory("OpenCASCADE");
 
 lcar1 = 0.25;
 lcar2 = .05;
-lcar3 = .025;
-
+lcar3 = .05;
 // first generate a box with the given dimensions:
 // 3,5 along x
 // 2 along y
 // 1 along z
 // bottom left corner at (0,0,0)
-Box(1) = {0,0,0, 3.5,2,1};
+Box(1) = {0,0,0, 5,3,1.5};
 
 // then generate a cylinder with the given dimensions:
 // radius 0.2
 // height 1
 // axis along y
-// bottom center at (0.75,0.5,0.5)
-Cylinder(2) = {0.75,0.5,0.5, 0,1,0, 0.2, 2*Pi};
+// bottom center at (0.75,1,0.5)
+Cylinder(2) = {0.75,1,0.75, 0,1,0, 0.2, 2*Pi};
 
 // Assign a mesh size to all the points of all the volumes:
 MeshSize{ PointsOf{ Volume{:}; } } = lcar1;
@@ -45,9 +44,14 @@ Physical Surface(3) = {7,8,9}; // The surface representing the hole  ---> Cylind
 
 Coherence;
 
+General.NumThreads = 0;
+Geometry.OCCParallel = 1;
+Geometry.OCCSewFaces = 1;
+
+Mesh.Algorithm3D = 10;
+
 // Finally, mesh the volume
 Mesh 3;
 
 // And save the mesh to file
 Save "cylinder3d.msh";
-Save "cylinder3d.vtk";

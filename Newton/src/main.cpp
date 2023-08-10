@@ -12,7 +12,7 @@ int main(int argc, char *argv[])
     Navier problem(N, degree_velocity, degree_pressure);
 
     problem.setup();
-    problem.solve_newton();
+    problem.run();
     problem.output();
 
     return 0;

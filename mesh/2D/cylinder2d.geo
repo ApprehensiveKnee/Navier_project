@@ -56,4 +56,3 @@ Mesh 2;
 
 // Save the mesh
 Save "cylinder2d.msh";
-Save "cylinder2d.vtk";
