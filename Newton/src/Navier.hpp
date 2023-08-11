@@ -220,10 +220,9 @@ public:
     };
 
     // Constructor.
-    Navier(const unsigned int &N_,
-           const unsigned int &degree_velocity_,
+    Navier(const unsigned int &degree_velocity_,
            const unsigned int &degree_pressure_)
-        : mpi_size(Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD)), mpi_rank(Utilities::MPI::this_mpi_process(MPI_COMM_WORLD)), pcout(std::cout, mpi_rank == 0), N(N_), degree_velocity(degree_velocity_), degree_pressure(degree_pressure_), mesh(MPI_COMM_WORLD)
+        : mpi_size(Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD)), mpi_rank(Utilities::MPI::this_mpi_process(MPI_COMM_WORLD)), pcout(std::cout, mpi_rank == 0), degree_velocity(degree_velocity_), degree_pressure(degree_pressure_), mesh(MPI_COMM_WORLD)
     {
     }
 
@@ -303,9 +302,6 @@ protected:
     InletVelocity inlet_velocity;
 
     // Discretization. ///////////////////////////////////////////////////////////
-
-    // Mesh refinement.
-    const unsigned int N;
 
     // Polynomial degree used for velocity.
     const unsigned int degree_velocity;
