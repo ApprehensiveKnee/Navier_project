@@ -340,10 +340,9 @@ void Navier::assemble(const double &time)
   // Invert D_inv.
   for (unsigned int i = 0; i < D_inv.size(); ++i)
   {
-    if (D_inv(i) != 0.0)
+    if (D_inv.in_local_range(i) && D_inv(i) != 0.0)
       D_inv(i) = 1.0 / D_inv(i);
   }
-
   // Dirichlet boundary conditions.
   {
     std::map<types::global_dof_index, double> boundary_values;

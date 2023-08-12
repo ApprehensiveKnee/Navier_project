@@ -59,6 +59,25 @@ public:
         if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
         {
             std::cout << "Preconditioner SIMPLE initialized." << std::endl;
+            std::cout << " Dimensions of B: " << B->m() << "x" << B->n()
+                      << std::endl;
+            std::cout << " Dimensions of B_T: " << B_T->m() << "x" << B_T->n()
+                      << std::endl;
+        }
+
+        // Compute the Schur complement S = B * D^-1 * B_T
+        B_T->Tmmult(S, *B_T, *D_inv);
+
+        // Preconditioner for S
+        preconditioner_S.initialize(S);
+
+        // If rank = 0
+        if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
+        {
+            std::cout << "Preconditioner SIMPLE initialized." << std::endl;
+            std::cout << " Dimensions of S: " << S.m() << "x" << S.n()
+                      << std::endl;
+            std::cout << " Dimensions of D_inv: " << D_inv->size() << std::endl;
         }
     }
 
@@ -67,30 +86,14 @@ public:
     vmult(TrilinosWrappers::MPI::BlockVector &dst,
           const TrilinosWrappers::MPI::BlockVector &src) const
     {
-        // Compute the Schur complement S = B * D^-1 * B_T and its preconditioner
-        {
-            // S = B * D^-1 * B_T
-            B->Tmmult(S, *B, *D_inv);
 
-            if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
-            {
-                std::cout << "S computed" << std::endl;
-            }
-
-            // Preconditioner for S
-            preconditioner_S.initialize(S);
-
-            if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
-            {
-                std::cout << "Preconditioner for S initialized." << std::endl;
-            }
-        }
         // Effect of P1
         {
 
             if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
             {
                 std::cout << "Starting to compute the effect of P1" << std::endl;
+                std::cout << "Norm of src.block(0): " << src.block(0).l2_norm() << std::endl;
             }
 
             // dst_0 = F^-1 * src_0
@@ -115,15 +118,19 @@ public:
 
             if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
             {
-                std::cout << "Computed tmp = -B * dst_0 + src_1" << std::endl;
+                std::cout << "Computed tmp = -B * dst_0 + src_1: " << std::endl;
+                std::cout << "Dimensions of tmp: " << tmp.size() << std::endl;
+                std::cout << "Dimensions of dst_1: " << dst.block(1).size() << std::endl;
+                std::cout << "Norm of src.block(1): " << src.block(1).l2_norm() << std::endl;
             }
 
             // dst_1 = - B_T^-1 * D * B^-1 * tmp = - S^-1 * tmp
 
             // 1. Solve S * dst_1 = tmp
+
             SolverControl solver_control_S(1000,
                                            1e-2 * src.block(1).l2_norm());
-            SolverGMRES<TrilinosWrappers::MPI::Vector> solver_gmres_S(
+            SolverFGMRES<TrilinosWrappers::MPI::Vector> solver_gmres_S(
                 solver_control_S);
             solver_gmres_S.solve(S,
                                  dst.block(1),
@@ -178,7 +185,7 @@ protected:
     mutable TrilinosWrappers::SparseMatrix S;
 
     // Preconditioner for the Schur complement.
-    mutable TrilinosWrappers::PreconditionSSOR preconditioner_S;
+    TrilinosWrappers::PreconditionSSOR preconditioner_S;
 
     // Inverse of the diagonal of F
     const TrilinosWrappers::MPI::Vector *D_inv;
