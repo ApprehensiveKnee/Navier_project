@@ -385,7 +385,6 @@ void Navier::solve_time_step()
 
   // Custom Defined Preconditioner
   PreconditionSIMPLE preconditioner;
-  pcout << "\nFino a qui tutto bene" << std::endl;
   preconditioner.initialize(alpha, system_matrix, D_inv.block(0));
 
   solver.solve(system_matrix, solution_owned, system_rhs, preconditioner);

@@ -55,30 +55,11 @@ public:
         // Initialize the F preconditioner.
         preconditioner_F.initialize(system_matrix.block(0, 0));
 
-        // If rank = 0
-        if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
-        {
-            std::cout << "Preconditioner SIMPLE initialized." << std::endl;
-            std::cout << " Dimensions of B: " << B->m() << "x" << B->n()
-                      << std::endl;
-            std::cout << " Dimensions of B_T: " << B_T->m() << "x" << B_T->n()
-                      << std::endl;
-        }
-
         // Compute the Schur complement S = B * D^-1 * B_T
         B_T->Tmmult(S, *B_T, *D_inv);
 
         // Preconditioner for S
         preconditioner_S.initialize(S);
-
-        // If rank = 0
-        if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
-        {
-            std::cout << "Preconditioner SIMPLE initialized." << std::endl;
-            std::cout << " Dimensions of S: " << S.m() << "x" << S.n()
-                      << std::endl;
-            std::cout << " Dimensions of D_inv: " << D_inv->size() << std::endl;
-        }
     }
 
     // Application of the preconditioner.
@@ -90,57 +71,31 @@ public:
         // Effect of P1
         {
 
-            if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
-            {
-                std::cout << "Starting to compute the effect of P1" << std::endl;
-                std::cout << "Norm of src.block(0): " << src.block(0).l2_norm() << std::endl;
-            }
-
             // dst_0 = F^-1 * src_0
             SolverControl solver_control_F(1000,
                                            1e-2 * src.block(0).l2_norm());
-            SolverGMRES<TrilinosWrappers::MPI::Vector> solver_gmres_F(
-                solver_control_F);
+            SolverGMRES<TrilinosWrappers::MPI::Vector> solver_gmres_F(solver_control_F);
             solver_gmres_F.solve(*F,
                                  dst.block(0),
                                  src.block(0),
                                  preconditioner_F);
-
-            if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
-            {
-                std::cout << "Computed dst_0 = F^-1 * src_0" << std::endl;
-            }
 
             // tmp = -B * dst_0 + src_1
             tmp.reinit(src.block(1));
             B->vmult(tmp, dst.block(0));
             tmp.sadd(-1.0, src.block(1));
 
-            if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
-            {
-                std::cout << "Computed tmp = -B * dst_0 + src_1: " << std::endl;
-                std::cout << "Dimensions of tmp: " << tmp.size() << std::endl;
-                std::cout << "Dimensions of dst_1: " << dst.block(1).size() << std::endl;
-                std::cout << "Norm of src.block(1): " << src.block(1).l2_norm() << std::endl;
-            }
-
             // dst_1 = - B_T^-1 * D * B^-1 * tmp = - S^-1 * tmp
 
             // 1. Solve S * dst_1 = tmp
 
             SolverControl solver_control_S(1000,
-                                           1e-2 * src.block(1).l2_norm());
-            SolverFGMRES<TrilinosWrappers::MPI::Vector> solver_gmres_S(
-                solver_control_S);
+                                           std::max(1e-2 * src.block(1).l2_norm(), 1e-8));
+            SolverFGMRES<TrilinosWrappers::MPI::Vector> solver_gmres_S(solver_control_S);
             solver_gmres_S.solve(S,
                                  dst.block(1),
                                  tmp,
                                  preconditioner_S);
-
-            if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
-            {
-                std::cout << "Computed S * dst_1 = tmp" << std::endl;
-            }
 
             // 2. Finally, dst_1 = - dst_1
             dst.block(1) *= -1.0;

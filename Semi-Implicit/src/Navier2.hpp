@@ -102,7 +102,7 @@ public:
     }
 
   protected:
-    const double alpha = 1.0;
+    const double alpha = 10.0;
   };
 
   // The initial solution to set up the system.
