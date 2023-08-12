@@ -43,16 +43,23 @@ public:
     // - the alpha parameter (relaxation parameter to dump the pressure update)
     void
     initialize(const double &alpha_,
-               const TrilinosWrappers::BlockSparseMatrix &system_matrix)
+               const TrilinosWrappers::BlockSparseMatrix &system_matrix,
+               const TrilinosWrappers::MPI::Vector &D_inv_)
     {
         alpha = &alpha_;
         F = &system_matrix.block(0, 0);
+        D_inv = &D_inv_;
         B = &system_matrix.block(1, 0);
         B_T = &system_matrix.block(0, 1);
 
+        // Initialize the F preconditioner.
         preconditioner_F.initialize(system_matrix.block(0, 0));
-        preconditioner_B.initialize(system_matrix.block(1, 0));
-        preconditioner_B_T.initialize(system_matrix.block(0, 1));
+
+        // If rank = 0
+        if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
+        {
+            std::cout << "Preconditioner SIMPLE initialized." << std::endl;
+        }
     }
 
     // Application of the preconditioner.
@@ -60,8 +67,31 @@ public:
     vmult(TrilinosWrappers::MPI::BlockVector &dst,
           const TrilinosWrappers::MPI::BlockVector &src) const
     {
+        // Compute the Schur complement S = B * D^-1 * B_T and its preconditioner
+        {
+            // S = B * D^-1 * B_T
+            B->Tmmult(S, *B, *D_inv);
+
+            if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
+            {
+                std::cout << "S computed" << std::endl;
+            }
+
+            // Preconditioner for S
+            preconditioner_S.initialize(S);
+
+            if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
+            {
+                std::cout << "Preconditioner for S initialized." << std::endl;
+            }
+        }
         // Effect of P1
         {
+
+            if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
+            {
+                std::cout << "Starting to compute the effect of P1" << std::endl;
+            }
 
             // dst_0 = F^-1 * src_0
             SolverControl solver_control_F(1000,
@@ -73,37 +103,39 @@ public:
                                  src.block(0),
                                  preconditioner_F);
 
+            if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
+            {
+                std::cout << "Computed dst_0 = F^-1 * src_0" << std::endl;
+            }
+
             // tmp = -B * dst_0 + src_1
             tmp.reinit(src.block(1));
             B->vmult(tmp, dst.block(0));
             tmp.sadd(-1.0, src.block(1));
 
-            // dst_1 = - B_T^-1 * D * B^-1 * tmp
+            if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
+            {
+                std::cout << "Computed tmp = -B * dst_0 + src_1" << std::endl;
+            }
 
-            // 1. Solve B * dst_1 = tmp
+            // dst_1 = - B_T^-1 * D * B^-1 * tmp = - S^-1 * tmp
+
+            // 1. Solve S * dst_1 = tmp
             SolverControl solver_control_S(1000,
                                            1e-2 * src.block(1).l2_norm());
             SolverGMRES<TrilinosWrappers::MPI::Vector> solver_gmres_S(
                 solver_control_S);
-            solver_gmres_S.solve(*B,
+            solver_gmres_S.solve(S,
                                  dst.block(1),
                                  tmp,
-                                 preconditioner_B);
+                                 preconditioner_S);
 
-            // 2. extract D and tmp = D * dst_1
-            D.reinit(src.block(0));
-            for (unsigned int i = 0; i < D.size(); ++i)
-                D(i) = F->diag_element(i);
-            tmp = D * dst.block(1);
-            // D->vmult(tmp, dst.block(1));
+            if (Utilities::MPI::this_mpi_process(MPI_COMM_WORLD) == 0)
+            {
+                std::cout << "Computed S * dst_1 = tmp" << std::endl;
+            }
 
-            // 3. Solve B_T * dst_1 = tmp
-            solver_gmres_S.solve(*B_T,
-                                 dst.block(1),
-                                 tmp,
-                                 preconditioner_B_T);
-
-            // Finally, dst_1 = - dst_1
+            // 2. Finally, dst_1 = - dst_1
             dst.block(1) *= -1.0;
         }
 
@@ -119,14 +151,7 @@ public:
 
             // tmp = D^-1 * tmp
 
-            // Invert the diagonal
-            for (unsigned int i = 0; i < D.size(); ++i)
-            {
-                if (D(i) != 0.0)
-                    D(i) = 1.0 / D(i);
-            }
-
-            tmp = D * tmp;
+            tmp = *D_inv * tmp;
 
             // dst_0 = dst_0 - tmp
             dst.block(0) -= tmp;
@@ -140,23 +165,23 @@ protected:
     // F matrix.
     const TrilinosWrappers::SparseMatrix *F;
 
-    // the diagonal part of F
-    mutable TrilinosWrappers::MPI::Vector D;
-
     // Preconditioner used for the F block.
     TrilinosWrappers::PreconditionILU preconditioner_F;
 
     // B matrix.
     const TrilinosWrappers::SparseMatrix *B;
 
-    // Preconditioner used for B.
-    TrilinosWrappers::PreconditionILU preconditioner_B;
-
     // B_T matrix.
     const TrilinosWrappers::SparseMatrix *B_T;
 
-    // Preconditioner used for B_T.
-    TrilinosWrappers::PreconditionILU preconditioner_B_T;
+    // a Sparse Matrix for the Schur complement
+    mutable TrilinosWrappers::SparseMatrix S;
+
+    // Preconditioner for the Schur complement.
+    mutable TrilinosWrappers::PreconditionSSOR preconditioner_S;
+
+    // Inverse of the diagonal of F
+    const TrilinosWrappers::MPI::Vector *D_inv;
 
     // Temporary vectors.
     mutable TrilinosWrappers::MPI::Vector tmp;

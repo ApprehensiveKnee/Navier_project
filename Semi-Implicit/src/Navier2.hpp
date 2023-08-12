@@ -31,6 +31,7 @@
 
 #include <fstream>
 #include <iostream>
+#include "Preconditioners.hpp"
 
 using namespace dealii;
 
@@ -86,7 +87,7 @@ public:
     virtual void
     vector_value(const Point<dim> & /*p*/, Vector<double> &values) const override
     {
-      values[0] = alpha;
+      values[0] = alpha * get_time();
       for (unsigned int i = 1; i < dim + 1; ++i)
         values[i] = 0.0;
     }
@@ -95,13 +96,13 @@ public:
     value(const Point<dim> & /*p*/, const unsigned int component = 0) const override
     {
       if (component == 0)
-        return alpha;
+        return alpha * get_time();
       else
         return 0.0;
     }
 
   protected:
-    const double alpha = 10.0;
+    const double alpha = 1.0;
   };
 
   // The initial solution to set up the system.
@@ -279,9 +280,8 @@ protected:
   // System matrix.
   TrilinosWrappers::BlockSparseMatrix system_matrix;
 
-  // Pressure mass matrix, needed for preconditioning. We use a block matrix for
-  // convenience, but in practice we only look at the pressure-pressure block.
-  TrilinosWrappers::BlockSparseMatrix pressure_mass;
+  // Diagonal Inverse of F matrix, needed for preconditioning. We use a blockvector for comodity.
+  TrilinosWrappers::MPI::BlockVector D_inv;
 
   // Right-hand side vector in the linear system.
   TrilinosWrappers::MPI::BlockVector system_rhs;

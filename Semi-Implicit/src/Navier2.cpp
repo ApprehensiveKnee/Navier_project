@@ -128,30 +128,12 @@ void Navier::setup()
     DoFTools::make_sparsity_pattern(dof_handler, coupling, sparsity);
     sparsity.compress();
 
-    // We also build a sparsity pattern for the pressure mass matrix.
-    for (unsigned int c = 0; c < dim + 1; ++c)
-    {
-      for (unsigned int d = 0; d < dim + 1; ++d)
-      {
-        if (c == dim && d == dim) // pressure-pressure term
-          coupling[c][d] = DoFTools::always;
-        else // other combinations
-          coupling[c][d] = DoFTools::none;
-      }
-    }
-    TrilinosWrappers::BlockSparsityPattern sparsity_pressure_mass(
-        block_owned_dofs, MPI_COMM_WORLD);
-    DoFTools::make_sparsity_pattern(dof_handler,
-                                    coupling,
-                                    sparsity_pressure_mass);
-    sparsity_pressure_mass.compress();
-
-    pcout << "  Initializing the matrices" << std::endl;
+    pcout << "  Initializing the matrix" << std::endl;
     system_matrix.reinit(sparsity);
-    pressure_mass.reinit(sparsity_pressure_mass);
 
     pcout << "  Initializing the system right-hand side" << std::endl;
     system_rhs.reinit(block_owned_dofs, MPI_COMM_WORLD);
+    D_inv.reinit(block_owned_dofs, MPI_COMM_WORLD);
     pcout << "  Initializing the solution vector" << std::endl;
     solution_owned.reinit(block_owned_dofs, MPI_COMM_WORLD);
     solution.reinit(block_owned_dofs, block_relevant_dofs, MPI_COMM_WORLD);
@@ -178,14 +160,14 @@ void Navier::assemble(const double &time)
                                        update_JxW_values);
 
   FullMatrix<double> cell_matrix(dofs_per_cell, dofs_per_cell);
-  FullMatrix<double> cell_pressure_mass_matrix(dofs_per_cell, dofs_per_cell);
   Vector<double> cell_rhs(dofs_per_cell);
+  Vector<double> cell_diag(dofs_per_cell);
 
   std::vector<types::global_dof_index> dof_indices(dofs_per_cell);
 
   system_matrix = 0.0;
   system_rhs = 0.0;
-  pressure_mass = 0.0;
+  D_inv = 0.0;
 
   FEValuesExtractors::Vector velocity(0);
   FEValuesExtractors::Scalar pressure(dim);
@@ -206,8 +188,7 @@ void Navier::assemble(const double &time)
 
     cell_matrix = 0.0;
     cell_rhs = 0.0;
-    cell_pressure_mass_matrix = 0.0;
-
+    cell_diag = 0.0;
     // Exraction of the values of the velocity at previous time step (un) on the current cell.
     fe_values[velocity].get_function_values(solution_old, velocity_old_loc);
 
@@ -253,8 +234,8 @@ void Navier::assemble(const double &time)
 
           // Linearized Convection term contribution in the momentum equation.
           cell_matrix(i, j) +=
-              fe_values[velocity].value(i, q) *
-              (fe_values[velocity].gradient(j, q) *
+              fe_values[velocity].value(j, q) *
+              (fe_values[velocity].gradient(i, q) *
                velocity_old_loc[q]) *
               fe_values.JxW(q);
 
@@ -267,12 +248,34 @@ void Navier::assemble(const double &time)
           cell_matrix(i, j) -= fe_values[velocity].divergence(j, q) *
                                fe_values[pressure].value(i, q) *
                                fe_values.JxW(q);
-
-          // Pressure mass matrix.
-          cell_pressure_mass_matrix(i, j) +=
-              fe_values[pressure].value(i, q) *
-              fe_values[pressure].value(j, q) * fe_values.JxW(q);
         }
+
+        ////////////////////////////////////////////////////////////////////////////
+
+        // Local contributions to the diagonal of the F matrix:
+
+        // Velocity Mass contribution term in the momentum equation.
+        cell_diag(i) +=
+            fe_values[velocity].value(i, q) *
+            fe_values[velocity].value(i, q) /
+            deltat *
+            fe_values.JxW(q);
+
+        // Stiffness contribution term in the momentum equation.
+        cell_diag(i) +=
+            nu *
+            scalar_product(fe_values[velocity].gradient(i, q),
+                           fe_values[velocity].gradient(i, q)) *
+            fe_values.JxW(q);
+
+        // Linearized Convection term contribution in the momentum equation.
+        cell_diag(i) +=
+            fe_values[velocity].value(i, q) *
+            (fe_values[velocity].gradient(i, q) *
+             velocity_old_loc[q]) *
+            fe_values.JxW(q);
+
+        ////////////////////////////////////////////////////////////////////////////
 
         // Local contributions to the residual vector:
 
@@ -327,12 +330,19 @@ void Navier::assemble(const double &time)
 
     system_matrix.add(dof_indices, cell_matrix);
     system_rhs.add(dof_indices, cell_rhs);
-    pressure_mass.add(dof_indices, cell_pressure_mass_matrix);
+    D_inv.add(dof_indices, cell_diag);
   }
 
   system_matrix.compress(VectorOperation::add);
   system_rhs.compress(VectorOperation::add);
-  pressure_mass.compress(VectorOperation::add);
+  D_inv.compress(VectorOperation::add);
+
+  // Invert D_inv.
+  for (unsigned int i = 0; i < D_inv.size(); ++i)
+  {
+    if (D_inv(i) != 0.0)
+      D_inv(i) = 1.0 / D_inv(i);
+  }
 
   // Dirichlet boundary conditions.
   {
@@ -376,7 +386,8 @@ void Navier::solve_time_step()
 
   // Custom Defined Preconditioner
   PreconditionSIMPLE preconditioner;
-  preconditioner.initialize(alpha, system_matrix);
+  pcout << "\nFino a qui tutto bene" << std::endl;
+  preconditioner.initialize(alpha, system_matrix, D_inv.block(0));
 
   solver.solve(system_matrix, solution_owned, system_rhs, preconditioner);
   pcout << "  " << solver_control.last_step() << " GMRES iterations"
@@ -463,7 +474,7 @@ void Navier::solve()
     solution_old = solution;
 
     pcout << "n = " << std::setw(3) << time_step << ", t = " << std::setw(5)
-          << time << ":" << std::flush;
+          << time << ":" << std::endl;
 
     assemble(time);
     solve_time_step();
