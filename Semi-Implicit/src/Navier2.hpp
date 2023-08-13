@@ -87,7 +87,9 @@ public:
     virtual void
     vector_value(const Point<dim> & /*p*/, Vector<double> &values) const override
     {
+
       values[0] = alpha * get_time();
+
       for (unsigned int i = 1; i < dim + 1; ++i)
         values[i] = 0.0;
     }
@@ -203,7 +205,7 @@ protected:
   double nu = 0.1;
 
   // Gamma parameter
-  const double alpha = 0.5;
+  const double alpha = 0.1;
 
   // Outlet pressure [Pa].
   const double p_out = 10;

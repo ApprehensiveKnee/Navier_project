@@ -89,8 +89,7 @@ public:
 
             // 1. Solve S * dst_1 = tmp
 
-            SolverControl solver_control_S(1000,
-                                           std::max(1e-2 * src.block(1).l2_norm(), 1e-8));
+            SolverControl solver_control_S(1000, 1e-2 * src.block(1).l2_norm());
             SolverFGMRES<TrilinosWrappers::MPI::Vector> solver_gmres_S(solver_control_S);
             solver_gmres_S.solve(S,
                                  dst.block(1),

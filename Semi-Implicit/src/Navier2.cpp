@@ -178,6 +178,9 @@ void Navier::assemble(const double &time)
   // We need to compute the values of the forcing term at the currrent time step (tn+1)
   // by calling their set_time method.
   forcing_term.set_time(time);
+  // We also need to compute the values of the inlet solution at the current time step (tn+1)
+  // by calling their set_time method.
+  inlet_velocity.set_time(time);
 
   for (const auto &cell : dof_handler.active_cell_iterators())
   {
@@ -234,8 +237,8 @@ void Navier::assemble(const double &time)
 
           // Linearized Convection term contribution in the momentum equation.
           cell_matrix(i, j) +=
-              fe_values[velocity].value(j, q) *
-              (fe_values[velocity].gradient(i, q) *
+              fe_values[velocity].value(i, q) *
+              (fe_values[velocity].gradient(j, q) *
                velocity_old_loc[q]) *
               fe_values.JxW(q);
 
@@ -309,7 +312,7 @@ void Navier::assemble(const double &time)
             for (unsigned int i = 0; i < dofs_per_cell; ++i)
             {
               cell_rhs(i) +=
-                  p_out *
+                  -p_out *
                   scalar_product(fe_face_values.normal_vector(q),
                                  fe_face_values[velocity].value(i, q)) *
                   fe_face_values.JxW(q);

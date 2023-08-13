@@ -9,14 +9,14 @@ lcar3 = .05;
 // 2 along y
 // 1 along z
 // bottom left corner at (0,0,0)
-Box(1) = {0,0,0, 5,3,1.5};
+Box(1) = {0,0,0, 5.5,3,1.5};
 
 // then generate a cylinder with the given dimensions:
 // radius 0.2
 // height 1
 // axis along y
 // bottom center at (0.75,1,0.5)
-Cylinder(2) = {0.75,1,0.75, 0,1,0, 0.2, 2*Pi};
+Cylinder(2) = {1.5,1,0.75, 0,1,0, 0.2, 2*Pi};
 
 // Assign a mesh size to all the points of all the volumes:
 MeshSize{ PointsOf{ Volume{:}; } } = lcar1;
