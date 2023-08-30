@@ -3,19 +3,20 @@
 
 // Define the characteristic length for mesh elements (adjust as needed)
 lc = 0.1;
+lcar3 = .05;
 
 // Define points for the rectangular domain
 Point(1) = {0, 0, 0, lc};
-Point(2) = {3, 0, 0, lc};
-Point(3) = {3, 1, 0, lc};
-Point(4) = {0, 1, 0, lc};
+Point(2) = {5, 0, 0, lc};
+Point(3) = {5, 1.5, 0, lc};
+Point(4) = {0, 1.5, 0, lc};
 
 // Define points for the circular hole (adjust the center and radius as needed)
-Point(5) = {0.5, 0.5, 0, lc / 4}; // Center of the circle
-Point(6) = {0.5 + 0.2, 0.5, 0, lc / 4}; // Point 1 on the circle
-Point(7) = {0.5 , 0.5 + 0.2, 0, lc / 4}; // Point 1 on the circle
-Point(8) = {0.5 - 0.2, 0.5, 0, lc / 4}; // Point 1 on the circle
-Point(9) = {0.5, 0.5 - 0.2, 0, lc / 4}; // Point 1 on the circle
+Point(5) = {0.75, 0.75, 0, lcar3}; // Center of the circle
+Point(6) = {0.75 + 0.2, 0.75, 0, lcar3}; // Point 1 on the circle
+Point(7) = {0.75 , 0.75 + 0.2, 0, lcar3}; // Point 1 on the circle
+Point(8) = {0.75 - 0.2, 0.75, 0, lcar3}; // Point 1 on the circle
+Point(9) = {0.75, 0.75 - 0.2, 0, lcar3}; // Point 1 on the circle
 
 // Define lines for the rectangular domain
 Line(1) = {1, 2};
@@ -45,9 +46,8 @@ Plane Surface(100) = {10, 20};
 Physical Surface(100) = {100}; // Inlet = 1
 Physical Curve(0) = {4}; // Inlet = 1
 Physical Curve(1) = {2}; // Outlet = 2
-Physical Curve(2) = {1}; // Bottom = 3
-Physical Curve(3) = {3}; // Top = 4
-Physical Curve(4) = {5,6,7,8}; // Cylinder = 5
+Physical Curve(2) = {1,3}; // Bottom an d Top
+Physical Curve(3) = {5,6,7,8}; // Cylinder = 5
 Coherence;
 
 
