@@ -364,7 +364,10 @@ void Navier::assemble(const double &time)
                                              boundary_functions,
                                              boundary_values,
                                              ComponentMask(
-                                                 {true, true, true, false}));
+                                                 {true,
+                                                  true,
+                                                  true,
+                                                  false}));
 
     boundary_functions.clear();
     boundary_functions[2] = &zero_function;
@@ -373,7 +376,10 @@ void Navier::assemble(const double &time)
                                              boundary_functions,
                                              boundary_values,
                                              ComponentMask(
-                                                 {true, true, true, false}));
+                                                 {true,
+                                                  true,
+                                                  true,
+                                                  false}));
 
     MatrixTools::apply_boundary_values(
         boundary_values, system_matrix, solution_owned, system_rhs, false);
@@ -382,7 +388,7 @@ void Navier::assemble(const double &time)
 
 void Navier::solve_time_step()
 {
-  SolverControl solver_control(2000, 1e-6 * system_rhs.l2_norm());
+  SolverControl solver_control(10000, 1e-8 * system_rhs.l2_norm());
 
   SolverGMRES<TrilinosWrappers::MPI::BlockVector> solver(solver_control);
 

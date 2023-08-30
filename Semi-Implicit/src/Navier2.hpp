@@ -87,8 +87,10 @@ public:
     virtual void
     vector_value(const Point<dim> & /*p*/, Vector<double> &values) const override
     {
-
-      values[0] = alpha * get_time();
+      if (get_time() < 1.0)
+        values[0] = alpha * (std::exp(get_time()) - 1);
+      else
+        values[0] = alpha;
 
       for (unsigned int i = 1; i < dim + 1; ++i)
         values[i] = 0.0;
@@ -98,7 +100,12 @@ public:
     value(const Point<dim> & /*p*/, const unsigned int component = 0) const override
     {
       if (component == 0)
-        return alpha * get_time();
+      {
+        if (get_time() < 1.0)
+          return alpha * (std::exp(get_time()) - 1);
+        else
+          return alpha;
+      }
       else
         return 0.0;
     }
@@ -202,7 +209,7 @@ protected:
   // Problem definition. ///////////////////////////////////////////////////////
 
   // Kinematic viscosity [m2/s].
-  double nu = 0.1;
+  double nu = 0.01;
 
   // Gamma parameter
   const double alpha = 0.1;
