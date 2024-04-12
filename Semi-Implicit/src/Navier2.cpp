@@ -376,7 +376,7 @@ void Navier::assemble(const double &time)
                                              boundary_functions,
                                              boundary_values,
                                              ComponentMask(
-                                                 {true,
+                                                 {false,
                                                   true,
                                                   true,
                                                   false}));
